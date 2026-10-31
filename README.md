@@ -67,21 +67,70 @@ Compare against our own retrained copy of the base model on our folds, not again
 
 ## Data
 
-Dataset: [`sewa-rural-care/anemia-survey-dataset`](https://huggingface.co/datasets/sewa-rural-care/anemia-survey-dataset) on Hugging Face. Gated access; **CC BY-NC 4.0** plus a data use policy (non-commercial, no re-identification, no redistribution of raw files). Never commit anything under `data/`.
+Dataset: [`sewa-rural-care/anemia-survey-dataset`](https://huggingface.co/datasets/sewa-rural-care/anemia-survey-dataset) on Hugging Face. Gated access; **CC BY-NC 4.0** plus a data use policy (non-commercial, no re-identification, no redistribution of raw files). The data is therefore **not in this repo**. Everyone downloads it themselves from Hugging Face, following the steps below, so all of us work on exactly the same data. Never commit anything under `data/`.
 
-| Mode | Per patient | All ~5,900 patients |
+### What we use from the SEWA dataset
+
+The full dataset is ~650 GB: 734 Parquet shards of 8 patients each (~5,872 patients). Almost all of that size is the PPG video (`ppg_frames`, ~900 JPEG frames, ~110 MB per patient). This project uses **every patient** but **every column except `ppg_frames`**:
+
+| Kept | Columns |
+|---|---|
+| ID | `patient_uuid` |
+| 4 photos | `image_conjunctiva`, `image_tongue`, `image_fingernails_open`, `image_fingernails_closed` |
+| Camera metadata per photo | `camera_meta_conjunctiva`, `camera_meta_tongue`, `camera_meta_fingernails_open`, `camera_meta_fingernails_closed` |
+| Survey (demographics, symptoms, clinical exam, lighting, device, skin tone, HemoCue) | all `survey_*` columns, e.g. `survey_age`, `survey_gender`, `survey_pregnancy_status`, `survey_device_modal`, `survey_light_intensity`, `survey_skin_tone_l/b`, `survey_nail_polish_or_henna`, `survey_eye/tongue/nail_examination`, `survey_hemocue_venus_blood`, `survey_hemocue_capillary_blood` |
+| Lab reference (CBC) | all `cbc_*` columns; **`cbc_hgb_g_dl` is the ground-truth Hb** |
+| Label | `hemoglobin_category` (adult cutoffs only, see Scope) |
+| PPG metadata only | `ppg_frame_count`, `ppg_frame_metadata` (no frames) |
+
+| Dropped | Why |
+|---|---|
+| `ppg_frames` | ~650 GB; PPG is out of scope (see Scope) |
+
+Result: **all ~5,872 patients, ~5 GB on disk**, saved as one Parquet file per shard in `data/subset/images/` (e.g. `shard_00044.parquet`).
+
+### How to download it the same way
+
+1. **Get access.** Sign in to Hugging Face, open the [dataset page](https://huggingface.co/datasets/sewa-rural-care/anemia-survey-dataset), fill in the access form and accept the data use policy. Approval can be manual, so wait until the page shows you have access.
+2. **Log in locally** with a read token from https://huggingface.co/settings/tokens:
+   ```bash
+   hf auth login
+   ```
+3. **Install the dependencies** (versions we used: `pyarrow` 24.0.0, `huggingface_hub` 1.33.0, `datasets` 5.1.0):
+   ```bash
+   pip install pyarrow huggingface_hub datasets
+   ```
+4. **Download**, from the repo root:
+   ```bash
+   python fetch_subset.py --mode images --budget-gb 6
+   ```
+   The first line it prints should be `Mode=images: 734/734 shards, ... patients`. If it says fewer than 734 shards, the budget was too small and you only have part of the data.
+
+How `fetch_subset.py` works, so the result is identical for everyone:
+
+- It reads only the needed **columns** of each remote Parquet shard over HTTP range requests, so the PPG bytes are never downloaded.
+- Shards are visited in a **fixed random order (`--seed 42`)** and taken until `--budget-gb` would be exceeded. With 6 GB every shard fits, so everyone gets all patients. **Keep the default seed** if you ever use a smaller budget, so smaller subsets are also the same for everyone.
+- It is **resumable**: shards already in `data/subset/images/` are skipped, so rerun the same command if the network drops. Shard footers are cached in `data/subset/footers.json`.
+- Don't use `--mode full` unless you really want PPG (~650 GB). `--mode tabular` (~0.5 GB) gives only the survey/CBC columns.
+
+| Mode | Per patient | All ~5,872 patients |
 |---|---|---|
 | `tabular` | ~0.08 MB | ~0.5 GB |
-| `images` (4 photos + tabular) | ~0.84 MB | ~5 GB |
+| **`images` (what we use)** | **~0.84 MB** | **~5 GB** |
 | `full` (+ PPG frames) | ~110 MB | ~650 GB |
 
+### Check your download
+
 ```bash
-python fetch_subset.py --mode images --budget-gb 6   # everything except PPG
+python load_subset.py images
 ```
+
+This prints the dataset (≈5,872 rows) and the counts per `hemoglobin_category`. In Python:
 
 ```python
 from load_subset import load_subset
 ds = load_subset("images")
+ds[0]["image_tongue"].show()   # photos are decoded as PIL images
 ```
 
 ## Relevant SEWA Rural papers
