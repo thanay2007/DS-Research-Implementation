@@ -71,7 +71,7 @@ Dataset: [`sewa-rural-care/anemia-survey-dataset`](https://huggingface.co/datase
 
 ### What we use from the SEWA dataset
 
-The full dataset is ~650 GB: 734 Parquet shards of 8 patients each (~5,872 patients). Almost all of that size is the PPG video (`ppg_frames`, ~900 JPEG frames, ~110 MB per patient). This project uses **every patient** but **every column except `ppg_frames`**:
+The full dataset is ~650 GB: 734 Parquet shards of up to 8 patients each (5,869 patients). Almost all of that size is the PPG video (`ppg_frames`, ~900 JPEG frames, ~110 MB per patient). This project uses **every patient** but **every column except `ppg_frames`**:
 
 | Kept | Columns |
 |---|---|
@@ -87,7 +87,7 @@ The full dataset is ~650 GB: 734 Parquet shards of 8 patients each (~5,872 patie
 |---|---|
 | `ppg_frames` | ~650 GB; PPG is out of scope (see Scope) |
 
-Result: **all ~5,872 patients, ~5 GB on disk**, saved as one Parquet file per shard in `data/subset/images/` (e.g. `shard_00044.parquet`).
+Result: **all 5,869 patients, ~5.1 GB on disk**, saved as one Parquet file per shard in `data/subset/images/` (e.g. `shard_00044.parquet`).
 
 ### How to download it the same way
 
@@ -104,7 +104,7 @@ Result: **all ~5,872 patients, ~5 GB on disk**, saved as one Parquet file per sh
    ```bash
    python fetch_subset.py --mode images --budget-gb 6
    ```
-   The first line it prints should be `Mode=images: 734/734 shards, ... patients`. If it says fewer than 734 shards, the budget was too small and you only have part of the data.
+   The first line it prints should be `Mode=images: 734/734 shards, 5869 patients, ~5.076 GB planned`. If it says fewer than 734 shards, the budget was too small and you only have part of the data.
 
 How `fetch_subset.py` works, so the result is identical for everyone:
 
@@ -113,7 +113,7 @@ How `fetch_subset.py` works, so the result is identical for everyone:
 - It is **resumable**: shards already in `data/subset/images/` are skipped, so rerun the same command if the network drops. Shard footers are cached in `data/subset/footers.json`.
 - Don't use `--mode full` unless you really want PPG (~650 GB). `--mode tabular` (~0.5 GB) gives only the survey/CBC columns.
 
-| Mode | Per patient | All ~5,872 patients |
+| Mode | Per patient | All 5,869 patients |
 |---|---|---|
 | `tabular` | ~0.08 MB | ~0.5 GB |
 | **`images` (what we use)** | **~0.84 MB** | **~5 GB** |
@@ -125,7 +125,7 @@ How `fetch_subset.py` works, so the result is identical for everyone:
 python load_subset.py images
 ```
 
-This prints the dataset (≈5,872 rows) and the counts per `hemoglobin_category`. In Python:
+This prints the dataset (5,869 rows) and the counts per `hemoglobin_category`. In Python:
 
 ```python
 from load_subset import load_subset
