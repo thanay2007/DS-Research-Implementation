@@ -98,7 +98,7 @@ Result: **all 5,869 patients, ~5.1 GB on disk**, saved as one Parquet file per s
    ```
 3. **Install the dependencies** (versions we used: `pyarrow` 24.0.0, `huggingface_hub` 1.33.0, `datasets` 5.1.0):
    ```bash
-   pip install pyarrow huggingface_hub datasets
+   pip install pyarrow huggingface_hub datasets pillow
    ```
 4. **Download**, from the repo root:
    ```bash
@@ -132,6 +132,46 @@ from load_subset import load_subset
 ds = load_subset("images")
 ds[0]["image_tongue"].show()   # photos are decoded as PIL images
 ```
+
+### What the raw table does not tell you
+
+- **`patient_uuid` is per capture, not per person.** There are 5,869 rows but 5,782 people: field captures carry an `_INDOOR_n` / `_OUTDOOR_n` suffix, and 29 people appear 3 or 4 times. Folds use the id before the suffix.
+- **The field-representative group is identifiable:** the 516 rows with no `survey_data_collection_place`, from 429 people, matching the base paper's Appendix 6. It is held out as the external test. Its repeat captures have only the conjunctiva photo.
+- **7 rows are unusable:** 4 with no lab Hb, 2 with no survey data, 1 with survey columns shifted by one.
+- **Numeric columns are stored as strings** in most shards and as numbers in 2 shards, so parse them with `pd.to_numeric`.
+- **`hemoglobin_category` is wrong for far more than children.** WHO cut-offs relabel 1,834 rows, 1,681 of them pregnant women. Trimester is not recorded, so pregnancy uses the 1st/3rd trimester row.
+
+## Running the experiments
+
+Training needs `torch`, `scikit-learn`, `scipy`, `opencv-python` and `pandas` on top of the packages above. From the repo root:
+
+```bash
+python prepare_cohort.py
+python preprocess_images.py --out C:/tmp/ds-research/images
+python preview_crops.py --images C:/tmp/ds-research/images
+python run_experiments.py --images C:/tmp/ds-research/images
+python evaluate.py
+```
+
+`prepare_cohort.py` is deterministic, so everyone gets the same folds. `run_experiments.py` skips finished runs, so rerun it after an interruption. Everything derived from patient data stays under `data/` or the image cache, outside git. Contact sheets show patient photos: don't share them or upload them anywhere.
+
+On an RTX 3050 a conjunctiva-only model takes about 19 minutes and time grows with the number of photos per patient, so one pipeline takes about 25 hours over all subsets and folds.
+
+### Choices the base paper does not specify
+
+| Setting | Paper | Here |
+|---|---|---|
+| Filters and stem | Not stated | 7×7 stem with 64 filters, stages of 64 and 128 bottleneck filters (597k parameters) |
+| MLP | Not stated | 256 hidden units |
+| Huber delta | Not stated | 1.0 |
+| Reweighting | "Inverse bin frequency", no formula | 1 g/dL bins, inverse **square root** of frequency. Plain inverse frequency gave a test MAE of about 1.5 |
+| Learning rate | 0.013 (Appendix 5), 0.02 (main text) | 0.0001, chosen on validation. Decay of 0.97 applied per epoch |
+| Batch size | 32 (Appendix 5), 64 (main text) | 32 |
+| Augmentation | Not stated | Horizontal flips |
+| Checkpoint | Not stated | Best validation MAE |
+| Crop geometry | "Heuristic" using the paper edge | Largest square directly under the paper edge |
+
+Baseline check, conjunctiva + metadata on fold 0: test MAE 1.19 g/dL (paper 1.11). Validation AUC 0.77 for any anemia, 0.81 moderate-or-severe, 0.94 severe (paper's test set: 0.80, 0.82, 0.93). HemoCue capillary MAE on our test rows is 0.52, the same as the paper.
 
 ## Relevant SEWA Rural papers
 
